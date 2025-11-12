@@ -13,7 +13,7 @@ terraform {
   }
   
   backend "s3" {
-    bucket  = "arka-terraform-state"
+    bucket  = "arkamodulesk3"
     key     = "arka/terraform.tfstate"
     region  = "us-east-1"
     encrypt = true
