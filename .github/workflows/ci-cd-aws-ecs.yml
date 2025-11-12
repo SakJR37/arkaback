@@ -1,0 +1,423 @@
+name: Complete CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Permite ejecución manual
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.0
+
+jobs:
+  # ===================== INFRASTRUCTURE =====================
+  terraform:
+    name: Terraform Infrastructure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      alb_dns: ${{ steps.apply.outputs.alb_dns }}
+      ecr_registry: ${{ steps.apply.outputs.ecr_registry }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Create S3 bucket for Terraform state (if not exists)
+        run: |
+          aws s3 mb s3://arka-terraform-state --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          aws s3api put-bucket-versioning \
+            --bucket arka-terraform-state \
+            --versioning-configuration Status=Enabled 2>/dev/null || true
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        id: apply
+        working-directory: ./terraform
+        run: |
+          terraform apply -auto-approve tfplan
+          echo "alb_dns=$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
+          echo "ecr_registry=$(terraform output -raw ecr_registry)" >> $GITHUB_OUTPUT
+
+      - name: Save Terraform outputs
+        working-directory: ./terraform
+        run: terraform output -json > ../terraform-outputs.json
+
+      - name: Upload Terraform outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs
+          path: terraform-outputs.json
+
+  # ===================== TESTS =====================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run tests for all services
+        run: |
+          services=(
+            "auth-service"
+            "cart-service"
+            "catalog-service"
+            "inventory-service"
+            "order-service"
+            "notification-service"
+            "review-service"
+            "shipping-service"
+            "provider-service"
+            "category-maintainer"
+            "catalog-bff-web"
+            "catalog-bff-mobile"
+            "eureka-server"
+            "gateway"
+          )
+          
+          failed_services=()
+          
+          for service in "${services[@]}"; do
+            echo "============================================"
+            echo "Testing $service..."
+            echo "============================================"
+            
+            if [ -d "$service" ]; then
+              cd $service
+              
+              if mvn clean test -B; then
+                echo "✓ $service tests passed"
+              else
+                echo "✗ $service tests failed"
+                failed_services+=("$service")
+              fi
+              
+              cd ..
+            else
+              echo "⚠ Service directory not found: $service"
+            fi
+          done
+          
+          if [ ${#failed_services[@]} -gt 0 ]; then
+            echo "=========================================="
+            echo "Failed services: ${failed_services[*]}"
+            echo "=========================================="
+            exit 1
+          fi
+
+      - name: Generate coverage report
+        run: |
+          mkdir -p test-reports
+          find . -name "surefire-reports" -type d -exec cp -r {} test-reports/ \; || true
+          find . -name "jacoco.exec" -exec cp {} test-reports/ \; || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-reports/
+
+  # ===================== BUILD & DEPLOY SERVICES =====================
+  build-and-deploy:
+    name: Build & Deploy
+    needs: [terraform, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    strategy:
+      max-parallel: 4  # Limitar paralelismo para no saturar
+      matrix:
+        service:
+          - name: eureka-server
+            directory: eureka-server
+          - name: gateway
+            directory: gateway
+          - name: auth-service
+            directory: auth-service
+          - name: cart-service
+            directory: cart-service
+          - name: catalog-service
+            directory: catalog-service
+          - name: inventory-service
+            directory: inventory-service
+          - name: order-service
+            directory: order-service
+          - name: notification-service
+            directory: notification-service
+          - name: review-service
+            directory: review-service
+          - name: shipping-service
+            directory: shipping-service
+          - name: provider-service
+            directory: provider-service
+          - name: category-maintainer
+            directory: category-maintainer
+          - name: catalog-bff-web
+            directory: catalog-bff-web
+          - name: catalog-bff-mobile
+            directory: catalog-bff-mobile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get commit SHA (short)
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.vars.outputs.sha_short }}
+        run: |
+          cd ${{ matrix.service.directory }}
+          
+          # Build image
+          docker build \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VCS_REF=${{ github.sha }} \
+            -t $ECR_REGISTRY/arka-${{ matrix.service.name }}:$IMAGE_TAG \
+            -t $ECR_REGISTRY/arka-${{ matrix.service.name }}:latest \
+            .
+          
+          # Push both tags
+          docker push $ECR_REGISTRY/arka-${{ matrix.service.name }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/arka-${{ matrix.service.name }}:latest
+          
+          echo "Image pushed: $ECR_REGISTRY/arka-${{ matrix.service.name }}:$IMAGE_TAG"
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster arka-cluster \
+            --service arka-${{ matrix.service.name }}-service \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} \
+            || echo "Service not found or already updating"
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster arka-cluster \
+            --services arka-${{ matrix.service.name }}-service \
+            --region ${{ env.AWS_REGION }} \
+            --no-paginate \
+            || echo "Service might not exist yet"
+
+  # ===================== HEALTH CHECK =====================
+  health-check:
+    name: Health Check
+    needs: [build-and-deploy]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Download Terraform outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-outputs
+
+      - name: Extract ALB DNS
+        id: alb
+        run: |
+          ALB_DNS=$(cat terraform-outputs.json | jq -r '.alb_dns_name.value')
+          echo "dns=$ALB_DNS" >> $GITHUB_OUTPUT
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for services to start..."
+          sleep 60
+
+      - name: Check Gateway health
+        run: |
+          max_attempts=10
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://${{ steps.alb.outputs.dns }}/actuator/health; then
+              echo "✓ Gateway is healthy"
+              exit 0
+            fi
+            
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts failed, retrying in 30s..."
+            sleep 30
+          done
+          
+          echo "✗ Gateway health check failed"
+          exit 1
+
+      - name: Check Eureka health
+        run: |
+          curl -f http://${{ steps.alb.outputs.dns }}/eureka/ || echo "Eureka UI not accessible"
+
+  # ===================== POST-DEPLOYMENT =====================
+  post-deployment:
+    name: Post Deployment Tasks
+    needs: [health-check]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Tag deployment
+        run: |
+          git tag -a "deploy-$(date +%Y%m%d-%H%M%S)" \
+            -m "Deployment from commit ${{ github.sha }}"
+          git push origin --tags || echo "Tag push failed (might already exist)"
+
+      - name: Create CloudWatch dashboard
+        run: |
+          aws cloudwatch put-dashboard \
+            --dashboard-name arka-services \
+            --dashboard-body file://$(pwd)/cloudwatch-dashboard.json \
+            || echo "Dashboard creation skipped"
+
+      - name: Send deployment notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          COLOR="good"
+          if [ "$STATUS" != "success" ]; then
+            COLOR="danger"
+          fi
+          
+          echo "Deployment completed with status: $STATUS"
+          # Aquí puedes agregar notificaciones a Slack, Discord, etc.
+
+  # ===================== CLEANUP =====================
+  cleanup:
+    name: Cleanup old resources
+    needs: [post-deployment]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Cleanup old ECR images
+        run: |
+          services=(
+            "auth-service" "cart-service" "catalog-service" 
+            "inventory-service" "order-service" "notification-service"
+            "review-service" "shipping-service" "provider-service"
+            "category-maintainer" "catalog-bff-web" "catalog-bff-mobile"
+            "eureka-server" "gateway"
+          )
+          
+          for service in "${services[@]}"; do
+            echo "Cleaning up arka-$service..."
+            
+            # Keep only last 5 images
+            aws ecr describe-images \
+              --repository-name arka-$service \
+              --region ${{ env.AWS_REGION }} \
+              --query 'sort_by(imageDetails,& imagePushedAt)[:-5].[imageDigest]' \
+              --output text | \
+            while read digest; do
+              if [ ! -z "$digest" ]; then
+                aws ecr batch-delete-image \
+                  --repository-name arka-$service \
+                  --image-ids imageDigest=$digest \
+                  --region ${{ env.AWS_REGION }} \
+                  || echo "Could not delete image"
+              fi
+            done
+          done
+
+      - name: Cleanup old CloudWatch logs
+        run: |
+          echo "CloudWatch logs will be automatically cleaned by retention policy"
+
+# ===================== NOTIFICATIONS =====================
+  notify:
+    name: Send Notifications
+    needs: [build-and-deploy, health-check, post-deployment]
+    runs-on: ubuntu-latest
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Download Terraform outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-outputs
+
+      - name: Extract ALB URL
+        id: alb
+        run: |
+          ALB_URL=$(cat terraform-outputs.json | jq -r '.alb_url.value')
+          echo "url=$ALB_URL" >> $GITHUB_OUTPUT
+
+      - name: Deployment Success
+        if: ${{ needs.build-and-deploy.result == 'success' && needs.health-check.result == 'success' }}
+        run: |
+          echo "🎉 Deployment successful!"
+          echo "URL: ${{ steps.alb.outputs.url }}"
+          echo "Services are healthy and running"
+
+      - name: Deployment Failed
+        if: ${{ needs.build-and-deploy.result == 'failure' || needs.health-check.result == 'failure' }}
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check the logs for details"
+          exit 1

@@ -1,0 +1,114 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+
+  cloud:
+    gateway:
+      routes:
+        - id: inventory
+          uri: lb://inventory-service
+          predicates:
+            - Path=/api/products/**
+
+        # Nueva ruta para reportes de inventario
+        - id: inventory-reports
+          uri: lb://inventory-service
+          predicates:
+            - Path=/api/reports/**
+
+        # Nueva ruta para reportes de stock
+        - id: stock-reports
+          uri: lb://inventory-service
+          predicates:
+            - Path=/api/stock-report/**
+
+        - id: orders
+          uri: lb://order-service
+          predicates:
+            - Path=/api/orders/**
+
+        - id: catalog
+          uri: lb://catalog-service
+          predicates:
+            - Path=/api/catalog/**
+
+        - id: category
+          uri: lb://category-maintainer
+          predicates:
+            - Path=/api/categories/**
+
+        - id: cart
+          uri: lb://cart-service
+          predicates:
+            - Path=/api/carts/**
+
+        - id: abandoned-carts
+          uri: lb://cart-service
+          predicates:
+            - Path=/api/abandoned-carts/**
+
+        - id: provider
+          uri: lb://provider-service
+          predicates:
+            - Path=/api/providers/**
+
+        - id: shipping
+          uri: lb://shipping-service
+          predicates:
+            - Path=/api/shipping/**
+
+        - id: review
+          uri: lb://review-service
+          predicates:
+            - Path=/api/reviews/**
+
+        - id: bff-web
+          uri: lb://catalog-bff-web
+          predicates:
+            - Path=/api/bff/web/**
+
+        - id: bff-mobile
+          uri: lb://catalog-bff-mobile
+          predicates:
+            - Path=/api/bff/mobile/**
+
+        - id: auth
+          uri: lb://auth-service
+          predicates:
+            - Path=/auth/**
+
+        - id: notification
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+      default-filters:
+        - AddRequestHeader=X-Request-Source, Gateway
+        - AddRequestHeader=X-Forwarded-Proto, https
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka:8761/eureka/
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    reactor.netty.http.server.HttpServer: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
