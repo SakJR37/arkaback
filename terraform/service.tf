@@ -379,6 +379,15 @@ resource "aws_ecs_service" "services" {
     registry_arn = aws_service_discovery_service.services[each.key].arn
   }
 
+  # ⬇️ AGREGAR AQUÍ (DENTRO del recurso) ⬇️
+  deployment_configuration {
+    maximum_percent         = 200
+    minimum_healthy_percent = 100
+  }
+
+  # Enable ECS Exec para debugging
+  enable_execute_command = true
+
   depends_on = [
     aws_lb_listener.http,
     aws_iam_role.ecs_task_execution,
@@ -388,15 +397,6 @@ resource "aws_ecs_service" "services" {
   tags = {
     Name = "arka-${each.key}-service"
   }
-
-  # Permitir actualizaciones sin downtime
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
-  }
-
-  # Enable ECS Exec para debugging
-  enable_execute_command = true
 }
 
 # ===================== AUTO SCALING =====================

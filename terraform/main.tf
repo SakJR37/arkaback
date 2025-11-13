@@ -872,6 +872,6 @@ output "database_credentials" {
 
 output "pgadmin_connection_string" {
   description = "Connection string for pgAdmin"
-  value       = "postgresql://${var.db_username}:${var.db_password}@${split(":", aws_db_instance.shared.endpoint)[0]}:5432/inventorydb"
+  value       = "postgresql://${var.db_master_username}:${var.db_password}@${split(":", aws_db_instance.shared.endpoint)[0]}:5432/inventorydb"
   sensitive   = true
 }
