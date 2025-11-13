@@ -379,10 +379,11 @@ resource "aws_ecs_service" "services" {
     registry_arn = aws_service_discovery_service.services[each.key].arn
   }
 
-
-  maximum_percent         = 200
-  minimum_healthy_percent = 100
-
+  # ✅ CORRECTO - Con el bloque deployment_configuration
+  deployment_configuration {
+    maximum_percent         = 200
+    minimum_healthy_percent = 100
+  }
 
   # Enable ECS Exec para debugging
   enable_execute_command = true
@@ -397,7 +398,6 @@ resource "aws_ecs_service" "services" {
     Name = "arka-${each.key}-service"
   }
 }
-
 # ===================== AUTO SCALING =====================
 resource "aws_appautoscaling_target" "services" {
   for_each = local.service_configs
