@@ -331,7 +331,7 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_db_instance" "shared" {
   identifier     = "arka-shared-db"
   engine         = "postgres"
-  engine_version = "14.10"
+  engine_version = "14.13"
   
   # Free Tier
   instance_class        = "db.t3.micro"

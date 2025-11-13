@@ -315,11 +315,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Tag deployment
-        run: |
-          git tag -a "deploy-$(date +%Y%m%d-%H%M%S)" \
-            -m "Deployment from commit ${{ github.sha }}"
-          git push origin --tags || echo "Tag push failed (might already exist)"
+      #- name: Tag deployment
+      #  run: |
+      #    git tag -a "deploy-$(date +%Y%m%d-%H%M%S)" \
+      #      -m "Deployment from commit ${{ github.sha }}"
+      #    git push origin --tags || echo "Tag push failed (might already exist)"
 
       - name: Create CloudWatch dashboard
         run: |
