@@ -875,3 +875,4 @@ output "pgadmin_connection_string" {
   value       = "postgresql://${var.db_master_username}:${var.db_password}@${split(":", aws_db_instance.shared.endpoint)[0]}:5432/inventorydb"
   sensitive   = true
 }
+#wawa
