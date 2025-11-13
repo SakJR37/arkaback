@@ -64,14 +64,12 @@ variable "github_repo" {
 }
 
 # ===================== SECRETS =====================
-# Generate random password for RDS
-resource "random_password" "db_master_password" {
-  length  = 32
-  special = true
-  # Avoid characters that might cause issues in connection strings
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+variable "db_password" {
+  description = "Master password for RDS"
+  type        = string
+  sensitive   = true
+  default     = "Arka$123"
 }
-
 # Store DB password in Secrets Manager
 resource "aws_secretsmanager_secret" "db_master_password" {
   name_prefix             = "arka/db/master-password-"
@@ -83,7 +81,7 @@ resource "aws_secretsmanager_secret_version" "db_master_password" {
   secret_id = aws_secretsmanager_secret.db_master_password.id
   secret_string = jsonencode({
     username = var.db_master_username
-    password = random_password.db_master_password.result
+    password = var.db_password
   })
 }
 
@@ -315,7 +313,15 @@ resource "aws_security_group" "rds" {
     Name = "arka-rds-sg"
   }
 }
-
+resource "aws_security_group_rule" "rds_public_access" {
+  type              = "ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.rds.id
+  description       = "Allow PostgreSQL access from anywhere"
+}
 # ===================== RDS DATABASES =====================
 # DB Subnet Group
 resource "aws_db_subnet_group" "main" {
@@ -343,13 +349,13 @@ resource "aws_db_instance" "shared" {
   # Database
   db_name  = "inventorydb"  # Default database
   username = var.db_master_username
-  password = random_password.db_master_password.result
+  password = var.db_password
   port     = 5432
   
   # Network
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false
+  publicly_accessible    = true
   
   # Backup
   backup_retention_period   = 7
@@ -839,4 +845,33 @@ output "ecs_security_group_id" {
 output "alb_listener_arn" {
   description = "ALB HTTP listener ARN"
   value       = aws_lb_listener.http.arn
+}
+
+# ===================== CREDENCIALES DE BASE DE DATOS =====================
+output "database_credentials" {
+  description = "Database connection information"
+  value = {
+    host     = split(":", aws_db_instance.shared.endpoint)[0]
+    port     = aws_db_instance.shared.port
+    username = var.db_master_username
+    password = var.db_password
+    default_database = "inventorydb"
+    all_databases = [
+      "inventorydb",
+      "orderdb",
+      "cartdb",
+      "providerdb",
+      "catalogdb",
+      "shippingdb",
+      "categorydb",
+      "authdb"
+    ]
+  }
+  sensitive = true
+}
+
+output "pgadmin_connection_string" {
+  description = "Connection string for pgAdmin"
+  value       = "postgresql://${var.db_username}:${var.db_password}@${split(":", aws_db_instance.shared.endpoint)[0]}:5432/inventorydb"
+  sensitive   = true
 }

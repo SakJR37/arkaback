@@ -34,7 +34,7 @@ locals {
       priority          = 101
       path_pattern      = ["/api/products/*", "/api/reports/*", "/api/stock-report/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/inventorydb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/inventorydb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
         AWS_REGION                 = var.aws_region
@@ -53,7 +53,7 @@ locals {
       priority          = 102
       path_pattern      = ["/api/orders/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/orderdb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/orderdb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
         SQS_ORDER_EVENTS_QUEUE    = aws_sqs_queue.order_events.url
@@ -71,7 +71,7 @@ locals {
       priority          = 103
       path_pattern      = ["/api/carts/*", "/api/abandoned-carts/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/cartdb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/cartdb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
         SQS_ABANDONED_CART_QUEUE  = aws_sqs_queue.abandoned_cart_events.url
@@ -89,7 +89,7 @@ locals {
       priority          = 104
       path_pattern      = ["/api/catalog/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/catalogdb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/catalogdb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
       }
@@ -106,7 +106,7 @@ locals {
       priority          = 105
       path_pattern      = ["/api/categories/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/categorydb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/categorydb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
       }
@@ -123,7 +123,7 @@ locals {
       priority          = 106
       path_pattern      = ["/api/providers/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/providerdb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/providerdb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
       }
@@ -140,7 +140,7 @@ locals {
       priority          = 107
       path_pattern      = ["/api/shipping/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/shippingdb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/shippingdb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
       }
@@ -157,7 +157,7 @@ locals {
       priority          = 108
       path_pattern      = ["/auth/*"]
       env_vars = {
-        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${aws_db_instance.shared.endpoint}/authdb"
+        SPRING_DATASOURCE_URL      = "jdbc:postgresql://${split(":", aws_db_instance.shared.endpoint)[0]}:5432/authdb"
         SPRING_DATASOURCE_USERNAME = var.db_master_username
         EUREKA_CLIENT_SERVICEURL_DEFAULTZONE = "http://eureka-server.arka.local:8761/eureka/"
       }
@@ -385,12 +385,14 @@ resource "aws_ecs_service" "services" {
     aws_iam_role.ecs_task
   ]
 
-  # Permitir actualizaciones sin downtime
-  deployment_maximum_percent         = 200
-  deployment_minimum_healthy_percent = 100
-
   tags = {
     Name = "arka-${each.key}-service"
+  }
+
+  # Permitir actualizaciones sin downtime
+  deployment_configuration {
+    maximum_percent         = 200
+    minimum_healthy_percent = 100
   }
 
   # Enable ECS Exec para debugging

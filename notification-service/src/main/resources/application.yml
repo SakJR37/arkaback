@@ -1,5 +1,5 @@
 server:
-  port: 8088
+  port: ${SERVER_PORT:8088}
 
 spring:
   application:
@@ -8,12 +8,11 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka:8761/eureka/
-  instance:
-    prefer-ip-address: true
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
 
-# AWS Configuration (use environment variables or AWS credentials)
-aws:
-  region: us-east-1
-  ses:
-    from-email: noreply@arka.com
+sqs:
+  notification-queue: ${SQS_NOTIFICATION_QUEUE:}
+
+ses:
+  from-email: ${SES_FROM_EMAIL:juanpabloc200437@gmail.com
+}

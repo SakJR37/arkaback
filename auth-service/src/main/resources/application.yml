@@ -1,14 +1,13 @@
 server:
-  port: 8091
+  port: ${SERVER_PORT:8091}
 
 spring:
   application:
     name: auth-service
   datasource:
-    url: jdbc:postgresql://postgres-auth:5432/authdb
-    username: postgres
-    password: 123
-    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/authdb}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:Arka$123}
   jpa:
     hibernate:
       ddl-auto: update
@@ -16,22 +15,8 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-  security:
-    user:
-      name: admin
-      password: admin
 
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka:8761/eureka/
-  instance:
-    prefer-ip-address: true
-
-jwt:
-  secret: arkaSecretKeyForJWTTokenGenerationWithMinimum256BitsRequired
-  expiration: 86400000
-
-logging:
-  level:
-    org.springframework.security: DEBUG
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
