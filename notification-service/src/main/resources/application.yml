@@ -15,4 +15,3 @@ sqs:
 
 ses:
   from-email: ${SES_FROM_EMAIL:juanpabloc200437@gmail.com
-}
