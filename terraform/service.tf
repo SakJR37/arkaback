@@ -385,14 +385,12 @@ resource "aws_ecs_service" "services" {
     aws_iam_role.ecs_task
   ]
 
+  # Permitir actualizaciones sin downtime
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
+
   tags = {
     Name = "arka-${each.key}-service"
-  }
-
-  # Permitir actualizaciones sin downtime
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
   }
 
   # Enable ECS Exec para debugging

@@ -417,6 +417,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
     id     = "delete-old-reports"
     status = "Enabled"
 
+    filter {}  # Agregar esta línea
+
     expiration {
       days = 90
     }
