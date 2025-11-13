@@ -379,24 +379,22 @@ resource "aws_ecs_service" "services" {
     registry_arn = aws_service_discovery_service.services[each.key].arn
   }
 
-  # ✅ CORRECTO - Con el bloque deployment_configuration
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
-  }
-
-  # Enable ECS Exec para debugging
-  enable_execute_command = true
-
   depends_on = [
     aws_lb_listener.http,
     aws_iam_role.ecs_task_execution,
     aws_iam_role.ecs_task
   ]
 
+  # Permitir actualizaciones sin downtime
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
+
   tags = {
     Name = "arka-${each.key}-service"
   }
+
+  # Enable ECS Exec para debugging
+  enable_execute_command = true
 }
 # ===================== AUTO SCALING =====================
 resource "aws_appautoscaling_target" "services" {
